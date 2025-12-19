@@ -1,0 +1,5 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+*.exe filter=lfs diff=lfs merge=lfs -text
+dist/StarZone[[:space:]]Client[[:space:]]Setup[[:space:]]2.0.2.exe filter=lfs diff=lfs merge=lfs -text
+dist/*.exe filter=lfs diff=lfs merge=lfs -text
