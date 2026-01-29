@@ -1,0 +1,416 @@
+const { app, BrowserWindow, ipcMain, session, dialog } = require('electron');
+const Menu = require('electron').Menu;
+const yargs = require('yargs/yargs')
+const { hideBin } = require('yargs/helpers')
+const path = require('path');
+const Credentials = require("./credentials/credentials");
+const settings = require("electron-settings");
+const update = require("./update");
+const defaultSettings = require("./defaultSettings.json");
+const config = require("./package.json");
+const https = require('https');
+const axios = require('axios');
+
+let mainWindow;
+const playTime = Date.now();
+
+// INICIALIZACIÓN BÁSICA PRIMERO
+console.log('=== StarZone Client Starting ===');
+
+// 1. Configurar settings con manejo de errores
+try {
+    settings.configure({
+        atomicSave: true,
+        fileName: 'settings.json',
+        prettify: true
+    });
+    
+    if (!settings.getSync().check) {
+        settings.setSync(defaultSettings);
+    }
+} catch (settingsError) {
+    console.error('Settings error:', settingsError);
+}
+
+// 2. Discord RPC - DESHABILITADO TEMPORALMENTE para debugging
+// COMENTADO HASTA QUE LO ARREGLES
+/*
+const RPC = require('discord-rpc');
+const client = new RPC.Client({
+    transport: 'ipc'
+});
+
+// ... todo el código de Discord RPC ...
+*/
+
+let argv = yargs(hideBin(process.argv))
+    .usage('Usage: $0 [options]')
+    .option('dev', {
+        alias: 'd',
+        type: 'boolean',
+        description: 'Run in development mode'
+    })
+    .epilog('for more information visit https://starzone.se/')
+    .argv;
+
+async function createWindow() {
+    console.log('createWindow() called');
+    
+    // LLAMAR A UPDATE PERO MANEJAR ERRORES
+    try {
+        update.checkForUpdates();
+    } catch (updateError) {
+        console.error('Update check error:', updateError);
+    }
+
+    // CREAR VENTANA PRINCIPAL CON show:true
+    mainWindow = new BrowserWindow({
+        'width': 1280,  // Usar valores por defecto primero
+        'height': 720,
+        'x': 100,
+        'y': 100,
+        'icon': __dirname + '/icon.png',
+        'show': true,  // <-- MUY IMPORTANTE
+        'webPreferences': {
+            'preload': `${__dirname}/inject/main.js`,
+            'contextIsolation': true,
+            'nodeIntegration': true,
+            'plugins': true,
+            'devTools': argv.dev || true,  // <-- Siempre true para debug
+            'enableRemoteModule': true
+        },
+    });
+
+    console.log('Main window created');
+    
+    // MOSTRAR VENTANA INMEDIATAMENTE
+    mainWindow.show();
+    mainWindow.focus();
+    console.log('Main window shown and focused');
+
+    // ABRIR DEVTOOLS PARA DEBUG
+    mainWindow.webContents.openDevTools();
+    console.log('DevTools opened');
+
+    // CARGAR HTML
+    console.log('Loading index.html...');
+    mainWindow.loadFile("index.html").then(() => {
+        console.log('index.html loaded successfully');
+    }).catch(err => {
+        console.error('Failed to load index.html:', err);
+        // Cargar página de error
+        mainWindow.loadURL('data:text/html,<h1>Error loading app</h1><pre>' + err.toString() + '</pre>');
+    });
+
+    // INICIALIZAR CREDENCIALES (si existe)
+    try {
+        let credentials = new Credentials(BrowserWindow, mainWindow, settings, ipcMain);
+        console.log('Credentials initialized');
+    } catch (credError) {
+        console.error('Credentials error:', credError);
+    }
+
+    // Configuración de ventana
+    settingsWindow(mainWindow, "client");
+
+    // Manejo de nuevas ventanas
+    mainWindow.webContents.on('new-window', async function(e, url) {
+        console.log('New window requested:', url);
+        
+        let windowType;
+        e.preventDefault();
+
+        if (url === "https://"+config.serverURL+"/map") {
+            windowType = "game";
+        } else {
+            console.log('Opening external URL:', url);
+            return require('electron').shell.openExternal(url);
+        }
+
+        console.log('Creating game window');
+        let window = new BrowserWindow({
+            'width': 1280,
+            'height': 720,
+            'x': 100,
+            'y': 100,
+            'icon': __dirname + '/icon.png',
+            'show': true,  // <-- IMPORTANTE
+            'webPreferences': {
+                'preload': `${__dirname}/inject/main.js`,
+                'contextIsolation': true,
+                'nodeIntegration': true,
+                'plugins': true,
+                'devTools': argv.dev || true,
+                'enableRemoteModule': true
+            },
+        });
+
+        window.setMenuBarVisibility(true);
+        window.setAlwaysOnTop(false);
+        
+        // MOSTRAR VENTANA
+        window.show();
+        console.log('Game window shown');
+
+        window.loadURL(url);
+        console.log('Game URL loaded:', url);
+
+        if (argv.dev) {
+            window.webContents.openDevTools();
+        }
+
+        settingsWindow(window, windowType);
+    });
+}
+
+function createMenu() {
+    console.log('Creating menu...');
+    
+    axios.get("https://raw.githubusercontent.com/083d9a270e6e16b2fbb08d35067aae5f/cc06d45ce2ebf658b0cc8890bc7b9ea1/main/version.json").then(response => {
+        console.log('Menu version data received');
+
+        let newVersionOfClient = response.data.newVersion;
+
+        const template = [
+            {
+                label: 'View',
+                submenu: [
+                    { role: 'reload' },
+                    { role: 'forcereload' },
+                    { type: 'separator' },
+                    { role: 'resetzoom' },
+                    { role: 'zoomin' },
+                    { role: 'zoomout' },
+                    { type: 'separator' },
+                    { role: 'togglefullscreen' }
+                ]
+            },
+            { role: 'window', submenu: [{ role: 'minimize' }, { role: 'close' }] },
+            {
+                role: 'help',
+                label: 'Help',
+                submenu: [
+                    {
+                        label: 'Website',
+                        click() { require('electron').shell.openExternal("https://"+config.serverURL+"/"); }
+                    }, 
+                    {
+                        label: 'Discord',
+                        click() { require('electron').shell.openExternal("https://"+config.serverURL+"/discord.php"); }
+                    }
+                ]
+            },
+            {
+                role: 'cacheManage',
+                label: 'Manage cache',
+                submenu: [
+                    {
+                        label: 'Get Cache Size',
+                        click() { getCacheSize(); }
+                    }, 
+                    {
+                        label: 'Delete Cache (Beta)',
+                        click() { clearCacheButton(); }
+                    }
+                ]
+            },
+            {
+                role: 'infoClient',
+                label: 'Info Client',
+                submenu: [
+                    {
+                        label: `Your version: ${config.version}`
+                    }
+                ]
+            },
+            {
+                role: 'privacy',
+                label: 'Privacy',
+                submenu: [
+                    {
+                        label: `${(settings.getSync().privacy ? "Hidden" : "Show")} my account info in Discord`,
+                        click() { ManagePrivacy(); }
+                    }
+                ]
+            }
+        ];
+
+        if (config.version != newVersionOfClient){
+            template[4].submenu.push({label: `You cannot have the latest version (${newVersionOfClient}). Please update the client.`, click() { update.checkForUpdates(); }});
+        }
+    
+        menu = Menu.buildFromTemplate(template);
+        Menu.setApplicationMenu(menu);
+        console.log('Menu created successfully');
+
+    }).catch(function(err){
+        console.error('Error creating menu:', err);
+        // Crear menú básico de emergencia
+        const template = [
+            {
+                label: 'File',
+                submenu: [
+                    { role: 'quit' }
+                ]
+            }
+        ];
+        menu = Menu.buildFromTemplate(template);
+        Menu.setApplicationMenu(menu);
+    });
+}
+
+// CONFIGURACIÓN FLASH
+console.log('Configuring Flash...');
+let ppapi_flash_path;
+
+if (process.platform == 'win32') {
+    if (process.arch === 'x64' || process.env.hasOwnProperty('PROCESSOR_ARCHITEW6432')){
+        ppapi_flash_path = path.join(app.getAppPath(), '../flash/pepflashplayer64.dll');
+    } else {
+        ppapi_flash_path = path.join(app.getAppPath(), '../flash/pepflashplayer32.dll');
+    }
+    console.log('Flash DLL path:', ppapi_flash_path);
+} else if (process.platform == 'linux') {
+    ppapi_flash_path = path.join(app.getAppPath(), '../flash/libpepflashplayer.so');
+} else if (process.platform == 'darwin') {
+    ppapi_flash_path = path.join(app.getAppPath(), '../flash/PepperFlashPlayer.plugin');
+}
+
+if (ppapi_flash_path) {
+    app.commandLine.appendSwitch('ppapi-flash-path', ppapi_flash_path);
+}
+
+// INICIAR APLICACIÓN
+console.log('Setting up app events...');
+
+app.whenReady().then(() => {
+    console.log('App ready event fired');
+    createWindow();
+    createMenu();
+}).catch(err => {
+    console.error('Error in whenReady:', err);
+});
+
+app.on('window-all-closed', function() {
+    console.log('All windows closed');
+    if (process.platform !== 'darwin') {
+        app.quit();
+    }
+});
+
+app.on('activate', function() {
+    console.log('App activate event');
+    if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+        createMenu();
+    }
+});
+
+// FUNCIONES AUXILIARES (sin cambios)
+function isOSWin64() {
+    return process.arch === 'x64' || process.env.hasOwnProperty('PROCESSOR_ARCHITEW6432');
+}
+
+function settingsWindow(window, type) {
+    console.log('Settings for window type:', type);
+    
+    if (settings.getSync()[type] && settings.getSync()[type].max) {
+        window.maximize();
+    }
+
+    window.on('maximize', () => {
+        let backup = settings.getSync();
+        backup[type].max = true;
+        settings.setSync(backup);
+    });
+
+    window.on("unmaximize", () => {
+        let backup = settings.getSync();
+        backup[type].max = false;
+        settings.setSync(backup);
+    });
+
+    window.on('resize', function() {
+        let backup = settings.getSync();
+        let size = window.getSize();
+        backup[type].width = size[0];
+        backup[type].height = size[1];
+        settings.setSync(backup);
+    })
+
+    window.on('move', function(data) {
+        let backup = settings.getSync();
+        let pos = data.sender.getBounds();
+        backup[type].x = pos.x;
+        backup[type].y = pos.y;
+        settings.setSync(backup);
+    });
+}
+
+function formatCacheSize(size) {
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+    return `${size.toFixed(2)} ${units[unitIndex]}`;
+}
+
+async function clearCacheButton() {
+    await mainWindow.webContents.session.clearCache().then(function(){
+        mainWindow.webContents.session.clearStorageData();
+        dialog.showMessageBox({
+            type: 'info',
+            title: `Cache client`,
+            message: `Cache client deleted succesfully.`
+        });
+    }).catch(function(err){
+        console.error('Error clearing cache:', err);
+        dialog.showMessageBox({
+            type: 'error',
+            title: `Cache client`,
+            message: `Error to delete cache.`
+        });
+    });
+}
+
+async function getCacheSize() {
+    mainWindow.webContents.session.getCacheSize().then(function(size) {
+        dialog.showMessageBox({
+            type: 'info',
+            title: `Info cache`,
+            message: `Cache size: ${formatCacheSize(size)}.`
+        });
+    });
+}
+
+async function ManagePrivacy() {
+    let privacyData = settings.getSync();
+    if (privacyData.privacy){
+        privacyData.privacy = false;
+        dialog.showMessageBox({
+            type: 'info',
+            title: `Privacy`,
+            message: `Data saved succesfully. Restarting client...`
+        });
+        setTimeout(() => {
+            app.relaunch();
+            app.quit();
+        }, 2500);
+    } else if (!privacyData.privacy){
+        privacyData.privacy = true;
+        dialog.showMessageBox({
+            type: 'info',
+            title: `Privacy`,
+            message: `Data saved succesfully. Restarting client...`
+        });
+        setTimeout(() => {
+            app.relaunch();
+            app.quit();
+        }, 2500);
+    }
+    settings.setSync(privacyData);
+}
+
+console.log('=== StarZone Client Setup Complete ===');

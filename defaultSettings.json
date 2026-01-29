@@ -1,0 +1,12 @@
+{
+    "check": true,
+    "privacy": true,
+    "client": {
+        "width": 1000,
+        "height": 723
+    },
+    "game": {
+        "width": 1016,
+        "height": 700
+    }
+}

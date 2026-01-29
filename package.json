@@ -1,0 +1,58 @@
+{
+  "name": "starzone-client",
+  "version": "2.1.1",
+  "description": "Client to play StarZone.SE. Welcome to StarZone 15: New Nexus",
+  "main": "index.js",
+  "serverURL": "starzone.se",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --d",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --publish always",
+    "postinstall": "electron-builder install-app-deps",
+    "build": "electron-builder --publish=always",
+    "release": "electron-builder --publish always",
+    "test-build": "electron-builder",
+    "p-all": "electron-builder --ia32 --x64",
+    "p-all-release": "electron-builder --ia32 --x64 --publish always"
+  },
+  "author": "StarZone",
+  "license": "KaySer",
+  "devDependencies": {
+    "electron": "^4.2.12",
+    "electron-builder": "^22.10.5",
+    "electron-packager": "^15.2.0"
+  },
+  "dependencies": {
+    "axios": "^0.19.2",
+    "discord-rpc": "^4.0.1",
+    "electron-cookies": "^1.1.0",
+    "electron-progressbar": "^2.0.0",
+    "electron-settings": "^4.0.2",
+    "open": "^7.3.1",
+    "xml2js": "^0.4.23",
+    "yargs": "^16.2.0"
+  },
+  "build": {
+    "appId": "com.starzone.client",
+    "productName": "StarZone Client",
+    "extraResources": [
+      "./flash/**",
+      "./assets/css/**",
+      "./assets/images/**"
+    ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.games"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Game"
+    }
+  }
+}
