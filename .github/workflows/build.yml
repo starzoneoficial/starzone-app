@@ -1,0 +1,19 @@
+name: Build StarZone
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '18'
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v2
+        with:
+          name: build-${{ matrix.os }}
+          path: dist/
