@@ -1,4 +1,4 @@
-name: Simple Electron Test
+name: Electron Basic Test
 
 on: [push]
 
@@ -14,11 +14,12 @@ jobs:
       with:
         node-version: '18.x'
     
-    - name: Create package.json
+    - name: Create minimal files
       run: |
+        # package.json
         cat > package.json << 'EOF'
 {
-  "name": "starzone-app",
+  "name": "starzone-test",
   "version": "1.0.0",
   "main": "main.js",
   "scripts": {
@@ -29,16 +30,14 @@ jobs:
   }
 }
 EOF
-    
-    - name: Create main.js
-      run: |
+        
+        # main.js
         cat > main.js << 'EOF'
 const { app, BrowserWindow } = require('electron')
 
 app.whenReady().then(() => {
   const win = new BrowserWindow({ width: 800, height: 600 })
-  win.loadURL('data:text/html,<h1>Hello from Electron!</h1>')
-  console.log('✅ App started successfully!')
+  win.loadURL('data:text/html,<h1>Hello Electron!</h1>')
 })
 
 app.on('window-all-closed', () => {
@@ -50,4 +49,4 @@ EOF
       run: |
         npm install
         npx electron --version
-        echo "Test completed successfully!"
+        echo "✅ Everything works!"
