@@ -6,18 +6,12 @@ on:
   pull_request:
     branches: [ main, master ]
 
-# Opcional: Concurrencia solo para agrupar logs
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   build:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
     
     strategy:
-      fail-fast: false  # ⬅️ ¡IMPORTANTE! Un OS falla no cancela los demás
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     
@@ -29,59 +23,55 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18'
-        cache: 'npm'
-    
-    - name: Debug OS info
-      run: |
-        echo "OS: ${{ runner.os }}"
-        echo "Runner: ${{ runner.name }}"
-        echo "Arch: $(uname -m)"
+        # Quitar cache si no hay lock file
+        # cache: 'npm'
     
     - name: Install dependencies
       run: |
-        npm ci --no-audit --prefer-offline
+        # Listar archivos primero para debug
+        echo "=== Archivos en repositorio ==="
+        ls -la
         
-        # Verificar si electron-builder está instalado
-        if [ ! -f "node_modules/.bin/electron-builder" ]; then
-          npm install electron-builder --save-dev --no-audit
-        fi
+        # Instalar dependencias (sin lock file)
+        echo "Installing dependencies..."
+        npm install --no-audit --no-fund --prefer-offline
+        
+        # Mostrar qué se instaló
+        echo "=== Dependencies installed ==="
+        npm list --depth=0 2>/dev/null || true
     
     - name: Build Electron
       run: |
-        # Determinar sistema operativo para electron-builder
+        echo "Building for ${{ runner.os }}..."
+        
         case "${{ runner.os }}" in
           "Linux")
-            TARGET="linux"
+            # Build para Linux
+            npm run build:linux --if-present || \
+            npm run build --if-present || \
+            npx electron-builder --linux
             ;;
           "Windows")
-            TARGET="win"
+            # Build para Windows
+            npm run build:win --if-present || \
+            npm run build:windows --if-present || \
+            npm run build --if-present || \
+            npx electron-builder --win
             ;;
           "macOS")
-            TARGET="mac"
-            ;;
-          *)
-            TARGET=""
+            # Build para macOS
+            npm run build:mac --if-present || \
+            npm run build:macos --if-present || \
+            npm run build --if-present || \
+            npx electron-builder --mac
             ;;
         esac
-        
-        if [ -n "$TARGET" ]; then
-          echo "Building for $TARGET"
-          npm run build:$TARGET --if-present || \
-          npm run make --if-present || \
-          npm run dist --if-present || \
-          npx electron-builder --$TARGET
-        else
-          echo "Running default build"
-          npm run build --if-present || npm run make --if-present
-        fi
       
       env:
         CI: true
-        # Variables para CI
         ELECTRON_SKIP_NOTARIZE: true
-        CSC_IDENTITY_AUTO_DISCOVERY: false
     
-    - name: Upload build artifacts
+    - name: Upload artifacts
       if: success()
       uses: actions/upload-artifact@v4
       with:
@@ -90,11 +80,7 @@ jobs:
           dist/
           release/
           out/
-          build/
           *.exe
           *.dmg
           *.AppImage
-          *.deb
-          *.rpm
-        if-no-files-found: ignore  # ⬅️ Cambiado a ignore
-        retention-days: 7
+        if-no-files-found: warn
