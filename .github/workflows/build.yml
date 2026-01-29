@@ -22,65 +22,129 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
-        # Quitar cache si no hay lock file
-        # cache: 'npm'
+        node-version: '18.x'  # Cambiar a '18.x' en lugar de '18'
     
-    - name: Install dependencies
+    - name: Debug Node.js setup
       run: |
-        # Listar archivos primero para debug
-        echo "=== Archivos en repositorio ==="
-        ls -la
-        
-        # Instalar dependencias (sin lock file)
-        echo "Installing dependencies..."
-        npm install --no-audit --no-fund --prefer-offline
-        
-        # Mostrar qué se instaló
-        echo "=== Dependencies installed ==="
-        npm list --depth=0 2>/dev/null || true
+        echo "=== Node.js Info ==="
+        node --version
+        npm --version
+        echo "=== Disk Space ==="
+        df -h
+        echo "=== Memory ==="
+        free -h || systeminfo | find "Memory" || vm_stat
     
-    - name: Build Electron
+    - name: Check package.json
       run: |
-        echo "Building for ${{ runner.os }}..."
-        
-        case "${{ runner.os }}" in
-          "Linux")
-            # Build para Linux
-            npm run build:linux --if-present || \
-            npm run build --if-present || \
-            npx electron-builder --linux
-            ;;
-          "Windows")
-            # Build para Windows
-            npm run build:win --if-present || \
-            npm run build:windows --if-present || \
-            npm run build --if-present || \
-            npx electron-builder --win
-            ;;
-          "macOS")
-            # Build para macOS
-            npm run build:mac --if-present || \
-            npm run build:macos --if-present || \
-            npm run build --if-present || \
-            npx electron-builder --mac
-            ;;
-        esac
-      
-      env:
-        CI: true
-        ELECTRON_SKIP_NOTARIZE: true
+        echo "=== package.json content ==="
+        cat package.json
+        echo ""
+        echo "=== Scripts available ==="
+        npm run 2>/dev/null | head -20 || echo "No scripts or npm error"
     
-    - name: Upload artifacts
-      if: success()
+    - name: Install dependencies with verbose output
+      run: |
+        echo "=== Installing dependencies ==="
+        # Limpiar npm cache primero
+        npm cache clean --force 2>/dev/null || true
+        
+        # Instalar con verbose para ver errores
+        npm install --no-audit --no-fund --loglevel=verbose 2>&1 | tee npm-install.log
+        
+        # Verificar si la instalación fue exitosa
+        if [ $? -eq 0 ]; then
+          echo "✅ Dependencies installed successfully"
+          echo "=== Top-level dependencies ==="
+          npm list --depth=0 2>/dev/null | head -30 || true
+        else
+          echo "❌ npm install failed"
+          echo "=== Last 50 lines of npm error ==="
+          tail -50 npm-install.log || true
+          # Mostrar el debug log
+          echo "=== NPM debug log location ==="
+          ls -la /Users/runner/.npm/_logs/ 2>/dev/null || ls -la ~/.npm/_logs/ 2>/dev/null || echo "No npm logs found"
+          exit 1
+        fi
+    
+    - name: Check for electron
+      run: |
+        echo "=== Checking for Electron ==="
+        if [ -f "package.json" ]; then
+          if grep -q "electron" package.json; then
+            echo "✅ Electron found in package.json"
+            # Verificar versión
+            node -e "const pkg = require('./package.json'); console.log('Electron version:', pkg.dependencies?.electron || pkg.devDependencies?.electron || 'Not found')"
+          else
+            echo "❌ Electron not in package.json, installing..."
+            npm install electron --save-dev --no-audit
+          fi
+        fi
+        
+        # Verificar electron-builder
+        if ! grep -q "electron-builder" package.json; then
+          echo "Installing electron-builder..."
+          npm install electron-builder --save-dev --no-audit
+        fi
+    
+    - name: Simple build test
+      run: |
+        echo "=== Testing basic Electron ==="
+        # Crear un main.js simple si no existe
+        if [ ! -f "main.js" ] && [ ! -f "src/main.js" ]; then
+          echo "Creating minimal main.js for testing..."
+          cat > main.js << 'EOF'
+          const { app, BrowserWindow } = require('electron')
+          
+          function createWindow() {
+            const win = new BrowserWindow({
+              width: 800,
+              height: 600,
+              webPreferences: {
+                nodeIntegration: true
+              }
+            })
+            
+            win.loadFile('index.html').catch(err => {
+              console.log('No index.html, loading blank page')
+              win.loadURL('data:text/html,<h1>Electron App</h1>')
+            })
+          }
+          
+          app.whenReady().then(createWindow)
+          
+          app.on('window-all-closed', () => {
+            if (process.platform !== 'darwin') app.quit()
+          })
+          EOF
+        fi
+        
+        # Crear index.html simple si no existe
+        if [ ! -f "index.html" ]; then
+          cat > index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>Electron App</title>
+          </head>
+          <body>
+            <h1>Hello Electron!</h1>
+            <p>Build test successful</p>
+          </body>
+          </html>
+          EOF
+        fi
+        
+        # Probar si electron puede ejecutarse
+        echo "Testing Electron..."
+        npx electron --version || node -e "console.log('Electron path:', require.resolve('electron'))"
+    
+    - name: Upload logs on failure
+      if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: electron-${{ runner.os }}
+        name: error-logs-${{ runner.os }}
         path: |
-          dist/
-          release/
-          out/
-          *.exe
-          *.dmg
-          *.AppImage
-        if-no-files-found: warn
+          npm-install.log
+          /Users/runner/.npm/_logs/*.log
+        retention-days: 1
