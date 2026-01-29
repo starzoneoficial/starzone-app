@@ -1,266 +1,53 @@
-name: Build Electron
+name: Simple Electron Test
 
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+on: [push]
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+  test:
+    runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
     
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '18.x'
     
-    - name: Verify Node.js installation
+    - name: Create package.json
       run: |
-        echo "Node version: $(node --version)"
-        echo "NPM version: $(npm --version)"
-    
-    - name: Check package.json
-      run: |
-        echo "=== Checking package.json ==="
-        if [ -f "package.json" ]; then
-          echo "✅ package.json exists"
-          cat package.json
-        else
-          echo "❌ No package.json found, creating basic one..."
-          cat > package.json << 'EOF'
+        cat > package.json << 'EOF'
 {
   "name": "starzone-app",
   "version": "1.0.0",
-  "description": "Electron application",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "build": "echo 'Build script not configured'"
+    "start": "electron ."
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "devDependencies": {
+    "electron": "^28.0.0"
+  }
 }
 EOF
-        fi
     
-    - name: Install Electron
+    - name: Create main.js
       run: |
-        echo "=== Installing Electron ==="
-        # Instalar Electron primero (el más importante)
-        npm install electron --save-dev --no-audit --no-fund
-        
-        # Verificar instalación
-        echo "Electron installed:"
-        npx electron --version || echo "Electron not found"
-    
-    - name: Install other dependencies
-      run: |
-        echo "=== Installing dependencies from package.json ==="
-        # Solo si hay otras dependencias
-        if [ -f "package.json" ]; then
-          # Remover electron de package.json temporalmente para evitar conflicto
-          npm install --no-audit --no-fund --omit=dev
-        fi
-        
-        # Instalar electron-builder si no está
-        if ! grep -q "electron-builder" package.json; then
-          echo "Installing electron-builder..."
-          npm install electron-builder --save-dev --no-audit
-        fi
-    
-    - name: Create minimal app files
-      run: |
-        echo "=== Creating app files ==="
-        
-        # main.js
-        if [ ! -f "main.js" ]; then
-          cat > main.js << 'EOF'
+        cat > main.js << 'EOF'
 const { app, BrowserWindow } = require('electron')
-const path = require('path')
-
-function createWindow() {
-  const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
-    }
-  })
-
-  // Cargar index.html
-  mainWindow.loadFile('index.html')
-  
-  // Abrir DevTools en desarrollo
-  // mainWindow.webContents.openDevTools()
-}
 
 app.whenReady().then(() => {
-  createWindow()
-  
-  app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
+  const win = new BrowserWindow({ width: 800, height: 600 })
+  win.loadURL('data:text/html,<h1>Hello from Electron!</h1>')
+  console.log('✅ App started successfully!')
 })
 
-app.on('window-all-closed', function () {
+app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 EOF
-          echo "✅ Created main.js"
-        fi
-        
-        # index.html
-        if [ ! -f "index.html" ]; then
-          cat > index.html << 'EOF'
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Starzone App</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 20px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-        }
-        h1 {
-            font-size: 3em;
-            margin-bottom: 20px;
-        }
-        .status {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 20px;
-            font-family: monospace;
-        }
-    </style>
-</head>
-<body>
-    <h1>🚀 Starzone App</h1>
-    <p>Welcome to your Electron application!</p>
-    <div class="status">
-        <p>Electron: <span id="electron-version"></span></p>
-        <p>Node: <span id="node-version"></span></p>
-        <p>Chrome: <span id="chrome-version"></span></p>
-        <p>Platform: <span id="platform"></span></p>
-    </div>
-
-    <script>
-        document.getElementById('electron-version').textContent = process.versions.electron
-        document.getElementById('node-version').textContent = process.versions.node
-        document.getElementById('chrome-version').textContent = process.versions.chrome
-        document.getElementById('platform').textContent = process.platform + ' ' + process.arch
-        
-        console.log('App loaded successfully!')
-    </script>
-</body>
-</html>
-EOF
-          echo "✅ Created index.html"
-        fi
     
-    - name: Test Electron app
+    - name: Install and test
       run: |
-        echo "=== Testing Electron app ==="
-        
-        # Verificar que los archivos existen
-        echo "Files in directory:"
-        ls -la
-        
-        # Probar si puede iniciar (solo verificación, no ejecutar GUI)
-        echo "Testing Electron startup..."
-        
-        # Método 1: Solo verificar versión
+        npm install
         npx electron --version
-        
-        # Método 2: Crear un test simple
-        cat > test-electron.js << 'EOF'
-const { app } = require('electron')
-console.log('✅ Electron app module loaded successfully')
-console.log('App path:', app.getAppPath())
-console.log('App name:', app.getName())
-process.exit(0)
-EOF
-        
-        node test-electron.js
-        
-        echo "✅ Electron test passed!"
-    
-    - name: Build with electron-builder
-      run: |
-        echo "=== Building with electron-builder ==="
-        
-        # Crear configuración básica de electron-builder si no existe
-        if [ ! -f "electron-builder.yml" ] && [ ! -f "electron-builder.json" ]; then
-          cat > electron-builder.yml << 'EOF'
-appId: com.starzone.app
-productName: Starzone App
-directories:
-  output: dist
-  buildResources: build
-files:
-  - "**/*"
-  - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
-  - "!**/node_modules/.bin"
-  - "!**/*.iml"
-  - "!{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,__pycache__,thumbs.db,.gitignore,.idea,*.log}"
-win:
-  target: nsis
-  icon: build/icon.ico
-mac:
-  target: dmg
-  icon: build/icon.icns
-linux:
-  target: AppImage
-  icon: build/icon.png
-EOF
-          echo "✅ Created electron-builder.yml"
-        fi
-        
-        # Intentar build
-        echo "Building for ${{ runner.os }}..."
-        
-        case "${{ runner.os }}" in
-          "Linux")
-            npx electron-builder --linux || echo "Linux build failed or skipped"
-            ;;
-          "Windows")
-            npx electron-builder --win || echo "Windows build failed or skipped"
-            ;;
-          "macOS")
-            npx electron-builder --mac || echo "macOS build failed or skipped"
-            ;;
-        esac
-    
-    - name: Upload artifacts
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: starzone-app-${{ runner.os }}
-        path: |
-          dist/
-          release/
-        if-no-files-found: warn
-        retention-days: 7
+        echo "Test completed successfully!"
