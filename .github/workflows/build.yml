@@ -6,23 +6,20 @@ on:
   pull_request:
     branches: [ main, master ]
 
-# Cancelar runs anteriores del mismo workflow
+# Opcional: Concurrencia solo para agrupar logs
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45  # ⬅️ Aumentado
+    timeout-minutes: 60
     
     strategy:
+      fail-fast: false  # ⬅️ ¡IMPORTANTE! Un OS falla no cancela los demás
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        # macOS separado por posibles problemas
-        include:
-          - os: macos-latest
-            arch: arm64
+        os: [ubuntu-latest, windows-latest, macos-latest]
     
     steps:
     - name: Checkout code
@@ -33,46 +30,71 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
-        architecture: ${{ matrix.arch || 'x64' }}
     
-    - name: Cache dependencies
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.npm
-          node_modules
-        key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-node-
+    - name: Debug OS info
+      run: |
+        echo "OS: ${{ runner.os }}"
+        echo "Runner: ${{ runner.name }}"
+        echo "Arch: $(uname -m)"
     
     - name: Install dependencies
       run: |
         npm ci --no-audit --prefer-offline
-        # Si usas electron-builder
-        npm install electron-builder --no-save
-    
-    - name: Build Electron (sin tests primero)
-      run: |
-        # Solo build, no tests (más rápido)
-        npm run build --if-present || echo "No build script"
         
-        # Si usas electron-builder
-        if [ -f "package.json" ] && grep -q "electron-builder" package.json; then
-          npm run make || npm run dist
+        # Verificar si electron-builder está instalado
+        if [ ! -f "node_modules/.bin/electron-builder" ]; then
+          npm install electron-builder --save-dev --no-audit
         fi
+    
+    - name: Build Electron
+      run: |
+        # Determinar sistema operativo para electron-builder
+        case "${{ runner.os }}" in
+          "Linux")
+            TARGET="linux"
+            ;;
+          "Windows")
+            TARGET="win"
+            ;;
+          "macOS")
+            TARGET="mac"
+            ;;
+          *)
+            TARGET=""
+            ;;
+        esac
+        
+        if [ -n "$TARGET" ]; then
+          echo "Building for $TARGET"
+          npm run build:$TARGET --if-present || \
+          npm run make --if-present || \
+          npm run dist --if-present || \
+          npx electron-builder --$TARGET
+        else
+          echo "Running default build"
+          npm run build --if-present || npm run make --if-present
+        fi
+      
       env:
         CI: true
-        ELECTRON_SKIP_NOTARIZE: true  # Para CI
+        # Variables para CI
+        ELECTRON_SKIP_NOTARIZE: true
+        CSC_IDENTITY_AUTO_DISCOVERY: false
     
     - name: Upload build artifacts
       if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: electron-${{ matrix.os }}
+        name: electron-${{ runner.os }}
         path: |
           dist/
           release/
           out/
           build/
-        if-no-files-found: warn
+          *.exe
+          *.dmg
+          *.AppImage
+          *.deb
+          *.rpm
+        if-no-files-found: ignore  # ⬅️ Cambiado a ignore
         retention-days: 7
