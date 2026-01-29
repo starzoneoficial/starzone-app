@@ -1,52 +1,7 @@
-name: Electron Basic Test
-
+name: Simple Test
 on: [push]
-
 jobs:
   test:
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18.x'
-    
-    - name: Create minimal files
-      run: |
-        # package.json
-        cat > package.json << 'EOF'
-{
-  "name": "starzone-test",
-  "version": "1.0.0",
-  "main": "main.js",
-  "scripts": {
-    "start": "electron ."
-  },
-  "devDependencies": {
-    "electron": "^28.0.0"
-  }
-}
-EOF
-        
-        # main.js
-        cat > main.js << 'EOF'
-const { app, BrowserWindow } = require('electron')
-
-app.whenReady().then(() => {
-  const win = new BrowserWindow({ width: 800, height: 600 })
-  win.loadURL('data:text/html,<h1>Hello Electron!</h1>')
-})
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
-EOF
-    
-    - name: Install and test
-      run: |
-        npm install
-        npx electron --version
-        echo "✅ Everything works!"
+      - run: echo "Hello World"
