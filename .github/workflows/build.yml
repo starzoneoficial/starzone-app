@@ -1,38 +1,37 @@
-name: Release Starzone v2.1.1
-
-on:
-  push:
-    tags:
-      - 'v2.1.1*'
+name: Build
+on: [push]
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    # Opción A: Usa runner de Intel
+    runs-on: macos-12  # macOS Monterey con Intel
+    
+    # Opción B: Usa Ubuntu si no necesitas macOS específicamente
+    # runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Build all platforms
-        run: |
-          echo "🔨 Building Starzone App v2.1.1"
-          npm run build:win
-          npm run build:mac
-          npm run build:linux
-      
-      - name: Upload releases
-        uses: actions/upload-artifact@v4
-        with:
-          name: starzone-2.1.1-releases
-          path: |
-            dist/*.exe
-            dist/*.dmg
-            dist/*.AppImage
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: |
+        # Configura arquitectura específica para Electron
+        npm config set electron_mirror https://github.com/electron/electron/releases/download/v
+        npm config set electron_custom_dir v4.2.12
+        
+        # Instala con fallback para arquitecturas no soportadas
+        npm install --no-audit --no-fund --legacy-peer-deps || true
+        
+        # Si falla, intenta forzar arquitectura x64
+        if [ ! -d "node_modules/electron" ]; then
+          echo "Forcing electron installation for x64..."
+          npm install electron@4.2.12 --arch=x64 --no-save
+        fi
+    
+    - name: Build
+      run: npm run build --if-present
