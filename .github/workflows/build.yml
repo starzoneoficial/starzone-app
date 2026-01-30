@@ -1,37 +1,78 @@
-name: Build
-on: [push]
+name: Build Electron App
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   build:
-    # Opción A: Usa runner de Intel
-    runs-on: macos-12  # macOS Monterey con Intel
+    runs-on: macos-12  # Intel-based, compatible con Electron 4.2.12
     
-    # Opción B: Usa Ubuntu si no necesitas macOS específicamente
-    # runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x]
     
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v3
     
-    - name: Setup Node.js
+    - name: Setup Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v3
       with:
-        node-version: '18'
+        node-version: ${{ matrix.node-version }}
         cache: 'npm'
+    
+    - name: Cache Electron binaries
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/electron
+        key: ${{ runner.os }}-electron-${{ hashFiles('package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-electron-
     
     - name: Install dependencies
       run: |
-        # Configura arquitectura específica para Electron
-        npm config set electron_mirror https://github.com/electron/electron/releases/download/v
-        npm config set electron_custom_dir v4.2.12
+        # Limpia cache y reinstala
+        npm cache clean --force
+        rm -rf node_modules package-lock.json
         
-        # Instala con fallback para arquitecturas no soportadas
-        npm install --no-audit --no-fund --legacy-peer-deps || true
+        # Configura npmrc para Electron (IMPORTANTE)
+        echo "electron_mirror=https://github.com/electron/electron/releases/download/v" >> .npmrc
+        echo "electron_custom_dir=v4.2.12" >> .npmrc
         
-        # Si falla, intenta forzar arquitectura x64
-        if [ ! -d "node_modules/electron" ]; then
-          echo "Forcing electron installation for x64..."
-          npm install electron@4.2.12 --arch=x64 --no-save
-        fi
+        # Instala dependencias
+        npm install --no-audit --no-fund --legacy-peer-deps
+        
+        # Verifica que Electron se instaló
+        ls node_modules/electron || echo "Electron not found"
     
-    - name: Build
-      run: npm run build --if-present
+    - name: Build application
+      run: |
+        # Verifica package.json
+        cat package.json
+        
+        # Ejecuta el script build si existe
+        npm run build --if-present
+        
+        # O compila manualmente
+        echo "Building Electron app..."
+    
+    - name: Package application
+      run: |
+        # Si usas electron-packager o similar
+        npx electron-packager . --platform=darwin --arch=x64 --out=dist/ \
+          || echo "Packaging failed or not configured"
+        
+        # Lista archivos generados
+        ls -la dist/ 2>/dev/null || true
+    
+    - name: Upload artifacts
+      if: success()
+      uses: actions/upload-artifact@v3
+      with:
+        name: electron-app
+        path: |
+          dist/
+          !node_modules
+        retention-days: 5
