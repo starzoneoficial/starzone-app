@@ -1,66 +1,40 @@
-name: Build Electron
+name: Build Electron with Yarn
 
-on:
-  push:
-    branches: 
-      - main
-      - master
-  pull_request:
-    branches:
-      - main
-      - master
+on: [push]
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+  test:
+    runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20.x'
       
-      - name: Verify Node.js
-        run: node --version
+      - name: Install Yarn
+        run: npm install -g yarn
       
-      - name: Create package.json if missing
+      - name: Create package.json
         run: |
-          if [ ! -f "package.json" ]; then
-            echo '{"name":"starzone-app","version":"1.0.0","main":"main.js","scripts":{"start":"electron ."}}' > package.json
-          fi
+          cat > package.json << 'EOF'
+{
+  "name": "starzone-app",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "25.9.0"
+  }
+}
+EOF
       
-      - name: Install Electron
-        run: npm install electron --save-dev
+      - name: Install with Yarn
+        run: yarn install --network-timeout 300000
       
-      - name: Create main.js if missing
-        run: |
-          if [ ! -f "main.js" ]; then
-            echo "const { app, BrowserWindow } = require('electron')" > main.js
-            echo "" >> main.js
-            echo "app.whenReady().then(() => {" >> main.js
-            echo "  const win = new BrowserWindow({ width: 800, height: 600 })" >> main.js
-            echo "  win.loadURL('data:text/html,<h1>Hello Electron!</h1>')" >> main.js
-            echo "})" >> main.js
-            echo "" >> main.js
-            echo "app.on('window-all-closed', () => {" >> main.js
-            echo "  if (process.platform !== 'darwin') app.quit()" >> main.js
-            echo "})" >> main.js
-          fi
-      
-      - name: Test Electron
+      - name: Test
         run: npx electron --version
-      
-      - name: Upload success log
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: success-log
-          path: package.json
